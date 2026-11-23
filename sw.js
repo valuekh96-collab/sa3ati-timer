@@ -7,3 +7,4 @@ self.addEventListener('notificationclick',e=>{
     return self.clients.openWindow('./');
   }));
 });
+self.addEventListener('fetch',()=>{});

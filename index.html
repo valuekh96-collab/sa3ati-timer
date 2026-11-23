@@ -6,6 +6,10 @@
 <title>ساعاتي</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ساعاتي">
 <meta name="theme-color" content="#0f172a">
 <style>
 :root{--bg:#0f172a;--card:#1e293b;--tx:#f1f5f9;--mu:#94a3b8;--gold:#fbbf24;--ok:#22c55e;--line:#334155}
@@ -82,6 +86,19 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 <span class="tabs"><button id="tT" class="on">المؤقت</button><button id="tR">التقرير</button></span></h1>
 
 <section id="vT">
+  <div id="pwa" class="card hide">
+    <div id="pwaNoti" class="hide" style="margin-bottom:12px">
+      <div style="font-weight:700">🔔 فعّل الإشعارات</div>
+      <div class="hint" style="margin:4px 0 8px">لتصلك تذكيرات المهام الشغّالة حتى لو كانت الصفحة في الخلفية.</div>
+      <button class="big go" id="enNoti" style="margin-top:0;padding:12px;font-size:17px">تفعيل الإشعارات</button>
+    </div>
+    <div id="pwaInst" class="hide" style="margin-bottom:12px">
+      <div style="font-weight:700">📲 ثبّت التطبيق على الشاشة الرئيسية</div>
+      <div class="hint" id="iosHint" style="margin:4px 0 8px"></div>
+      <button class="big go" id="enInst" style="margin-top:0;padding:12px;font-size:17px">تثبيت التطبيق</button>
+    </div>
+    <div class="small" style="margin-top:0"><button id="pwaX">ليس الآن</button></div>
+  </div>
   <div id="runs"></div>
 
   <div id="idle" class="card">
@@ -618,13 +635,13 @@ window.appIn=function(u){
     try{localStorage.setItem(LEGACY+'.migrated',localStorage.getItem(LEGACY));localStorage.removeItem(LEGACY)}catch(e){}
   }
   saveLocal();
-  $('acct').textContent=u.email;
+  $('acct').textContent=u.email;setTimeout(pwaState,300);
   $('auth').classList.add('hide');$('aPass').value='';aMsg('');
   render();
 };
 window.appOut=function(){
   UID=null;K=null;db=DEF();norm();render();
-  $('acct').textContent='';showAuthForm();
+  $('acct').textContent='';showAuthForm();pwaState();
 };
 window.appState=function(data,pending){
   if(!data){if(!pending)pushState();return}
@@ -643,6 +660,43 @@ window.appLog=function(list){
   if(!$('vR').classList.contains('hide'))report();
 };
 
+
+/* ---------- install & notifications prompt ---------- */
+let deferredInstall=null;
+const isStandalone=()=>window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function pwaState(){
+  let dis=0;try{dis=+localStorage.getItem('sa3ati.pwaX')||0}catch(e){}
+  const hidden=Date.now()-dis<3*864e5;
+  const canNoti='Notification' in window&&Notification.permission==='default';
+  const canInst=!isStandalone()&&(!!deferredInstall||isIOS());
+  $('pwaNoti').classList.toggle('hide',!canNoti);
+  $('pwaInst').classList.toggle('hide',!canInst);
+  if(canInst&&!deferredInstall&&isIOS()){
+    $('iosHint').textContent='اضغط زر المشاركة (المربع والسهم) في Safari ثم «إضافة إلى الشاشة الرئيسية». الإشعارات على آيفون تعمل فقط بعد التثبيت.';
+    $('enInst').classList.add('hide');
+  }else{$('iosHint').textContent='تفتح كتطبيق مستقل وتصلك الإشعارات بشكل أفضل.';$('enInst').classList.remove('hide')}
+  $('pwa').classList.toggle('hide',hidden||(!canNoti&&!canInst)||!UID);
+}
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;pwaState()});
+window.addEventListener('appinstalled',()=>{deferredInstall=null;pwaState();toast('✔ تم تثبيت التطبيق')});
+$('enInst').onclick=async()=>{
+  if(!deferredInstall)return;
+  deferredInstall.prompt();
+  try{await deferredInstall.userChoice}catch(e){}
+  deferredInstall=null;pwaState();
+};
+$('enNoti').onclick=()=>{
+  if(!('Notification' in window))return;
+  Notification.requestPermission().then(p=>{hint();pwaState();if(p==='granted')toast('✔ تم تفعيل الإشعارات');else if(p==='denied')toast('الإشعارات محجوبة، فعّلها من إعدادات الموقع في المتصفح',1)});
+};
+$('pwaX').onclick=()=>{try{localStorage.setItem('sa3ati.pwaX',Date.now())}catch(e){}pwaState()};
+// أول لمسة بعد الدخول تطلب إذن الإشعارات مباشرة
+let askedOnce=false;
+document.addEventListener('pointerdown',()=>{
+  if(askedOnce||!UID||!('Notification' in window)||Notification.permission!=='default')return;
+  askedOnce=true;Notification.requestPermission().then(()=>{hint();pwaState()});
+},{once:false});
 setInterval(tick,1000);
 document.addEventListener('visibilitychange',tick);
 hint();render();
