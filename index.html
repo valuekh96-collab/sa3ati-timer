@@ -45,6 +45,8 @@ td.n{white-space:nowrap}
 .hint{font-size:12px;color:var(--mu);margin-top:10px;line-height:1.6}
 .hide{display:none!important}
 h3{margin:14px 0 6px;font-size:15px}
+dialog{background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:16px;padding:18px;width:min(92vw,420px)}
+dialog::backdrop{background:rgba(0,0,0,.55)}
 @media print{.tabs,.noprint,.x,.small{display:none!important}body{background:#fff;color:#000}.card{background:#fff;border:1px solid #ccc}.sum b{color:#000}}
 </style>
 </head>
@@ -55,8 +57,9 @@ h3{margin:14px 0 6px;font-size:15px}
 
 <section id="vT">
   <div id="idle" class="card">
+    <label>التصنيف</label><select id="cat"></select>
     <label>المهمة</label><input id="task" list="tl" placeholder="شو رح تشتغل عليه؟" autocomplete="off">
-    <label>المكان</label><input id="place" list="pl" placeholder="مثال: الشركة / البيت / العميل" autocomplete="off">
+    <label>المكان (اختياري)</label><input id="place" list="pl" placeholder="مثال: الشركة / البيت / العميل" autocomplete="off">
     <datalist id="tl"></datalist><datalist id="pl"></datalist>
     <button class="big go" id="start">▶ ابدأ</button>
   </div>
@@ -84,19 +87,36 @@ h3{margin:14px 0 6px;font-size:15px}
 <section id="vR" class="hide">
   <div class="card noprint">
     <div class="row">
-      <div><label>الشهر</label><input type="month" id="month"></div>
+      <div><label>من يوم</label><input type="date" id="dFrom"></div>
+      <div><label>إلى يوم</label><input type="date" id="dTo"></div>
+    </div>
+    <div class="small"><button id="qThis">هذا الشهر</button><button id="qPrev">الشهر الماضي</button></div>
+    <div class="row">
+      <div><label>التصنيف</label><select id="fcat"></select></div>
       <div><label>المكان</label><select id="fplace"></select></div>
     </div>
   </div>
   <div class="card">
-    <div class="sum"><div><b id="sumH">0</b><span>ساعة</span></div><div><b id="sumN">0</b><span>جلسة</span></div></div>
+    <div class="sum"><div><b id="sumT" style="font-size:18px;line-height:1.4">0</b><span id="sumD">0.00 ساعة</span></div><div><b id="sumN">0</b><span>جلسة</span></div></div>
+    <h3>حسب التصنيف</h3><table id="byCat"></table>
     <h3>حسب المكان</h3><table id="byPlace"></table>
     <h3>حسب المهمة</h3><table id="byTask"></table>
   </div>
   <div class="card">
     <h3 style="margin-top:0">التفاصيل</h3><table id="det"></table>
-    <div class="small"><button id="csv">⬇ Excel/CSV</button><button id="prn">🖨 طباعة / PDF</button></div>
+    <div class="small"><button id="xl" style="background:var(--gold);color:#0f172a;font-weight:700;border-color:var(--gold)">⬇ تصدير Excel</button><button id="prn">🖨 طباعة / PDF</button></div>
   </div>
+
+  <dialog id="dlg">
+    <div style="font-weight:700;margin-bottom:6px">اسم ملف التقرير</div>
+    <input id="fname" autocomplete="off">
+    <div class="hint">يُضاف الامتداد .xlsx تلقائيًا.</div>
+    <div class="small">
+      <button id="dOk" style="background:var(--gold);color:#0f172a;font-weight:700;border-color:var(--gold)">تصدير</button>
+      <button id="dAuto">اسم تلقائي</button>
+      <button id="dNo">إلغاء</button>
+    </div>
+  </dialog>
   <div class="card noprint">
     <div class="small" style="margin-top:0"><button id="bk">💾 نسخة احتياطية</button><button id="rs">📂 استرجاع</button></div>
     <input type="file" id="file" accept=".json" class="hide">
@@ -108,12 +128,20 @@ h3{margin:14px 0 6px;font-size:15px}
 <script>
 const $=id=>document.getElementById(id);
 const K='sa3ati.v1';
-let db={log:[],run:null,remind:30};
+let db={log:[],run:null,remind:30,cats:['مركز الشباب','مدرسة','عمل حر'],lastCat:''};
 try{const s=JSON.parse(localStorage.getItem(K));if(s)db=Object.assign(db,s)}catch(e){}
+const NOCAT='بدون تصنيف';
 const save=()=>{try{localStorage.setItem(K,JSON.stringify(db))}catch(e){}};
 const pad=n=>String(n).padStart(2,'0');
 const hms=ms=>{const s=Math.floor(ms/1000);return pad(Math.floor(s/3600))+':'+pad(Math.floor(s%3600/60))+':'+pad(s%60)};
-const hm=ms=>{const m=Math.round(ms/60000);return Math.floor(m/60)+'س '+(m%60)+'د'};
+const hm=ms=>{
+  const t=Math.round(ms/60000);
+  if(t<=0)return ms>0?'أقل من دقيقة':'0 دقيقة';
+  const h=Math.floor(t/60),m=t%60;
+  const H=n=>n===1?'ساعة':n===2?'ساعتان':n<=10?n+' ساعات':n+' ساعة';
+  const M=n=>n===1?'دقيقة':n===2?'دقيقتان':n<=10?n+' دقائق':n+' دقيقة';
+  return [h?H(h):'',m?M(m):''].filter(Boolean).join(' و');
+};
 const dec=ms=>(ms/3600000).toFixed(2);
 const dkey=t=>{const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -145,8 +173,10 @@ function start(){
   const task=$('task').value.trim();
   if(!task){$('task').focus();return}
   const place=$('place').value.trim();
+  const cat=$('cat').value;
+  db.lastCat=cat;
   if('Notification' in window&&Notification.permission==='default')Notification.requestPermission().then(hint);
-  db.run={task,place,t0:Date.now(),acc:0,seg:Date.now(),lastR:0,lastM:0};
+  db.run={task,place,cat,t0:Date.now(),acc:0,seg:Date.now(),lastR:0,lastM:0};
   save();render();
 }
 function pause(){
@@ -158,7 +188,7 @@ function pause(){
 function stop(){
   const r=db.run;if(!r)return;
   const ms=elapsed();
-  db.log.push({id:Date.now(),task:r.task,place:r.place,start:r.t0,end:Date.now(),ms});
+  db.log.push({id:Date.now(),task:r.task,place:r.place,cat:r.cat||'',start:r.t0,end:Date.now(),ms});
   db.run=null;save();
   closeNoti('run');closeNoti('remind');
   $('task').value='';
@@ -189,7 +219,7 @@ function render(){
   $('idle').classList.toggle('hide',!!r);
   $('run').classList.toggle('hide',!r);
   if(r){
-    $('rTask').textContent=r.task;$('rPlace').textContent=r.place?'📍 '+r.place:'';
+    $('rTask').textContent=r.task;$('rPlace').textContent=[r.cat?'🏷 '+r.cat:'',r.place?'📍 '+r.place:''].filter(Boolean).join('  ·  ');
     $('clock').classList.toggle('paused',!r.seg);
     $('rState').innerHTML=r.seg?'<span class="badge">شغّال</span>':'<span class="badge" style="background:#475569;color:#fff">استراحة</span>';
     $('pause').textContent=r.seg?'⏸ استراحة':'▶ كمّل';
@@ -201,8 +231,21 @@ function render(){
   $('tl').innerHTML=uniq('task').map(v=>`<option value="${esc(v)}">`).join('');
   $('pl').innerHTML=uniq('place').map(v=>`<option value="${esc(v)}">`).join('');
   $('remind').value=String(db.remind);
+  fillCats();
   tick();
 }
+function fillCats(sel){
+  const s=$('cat');
+  const cur=sel||s.value||db.lastCat||db.cats[0];
+  s.innerHTML=db.cats.map(c=>`<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('')+'<option value="__new">➕ تصنيف جديد…</option>';
+  if(db.cats.includes(cur))s.value=cur;
+}
+$('cat').onchange=e=>{
+  if(e.target.value!=='__new')return;
+  const n=(prompt('اسم التصنيف الجديد:')||'').trim();
+  if(n&&!db.cats.includes(n)){db.cats.push(n);save()}
+  fillCats(n||db.lastCat||db.cats[0]);
+};
 $('start').onclick=start;$('pause').onclick=pause;$('stop').onclick=stop;
 $('remind').onchange=e=>{db.remind=+e.target.value;save()};
 $('task').addEventListener('change',()=>{
@@ -214,24 +257,35 @@ $('task').addEventListener('keydown',e=>{if(e.key==='Enter')start()});
 /* ---------- report ---------- */
 $('tT').onclick=()=>tab('T');$('tR').onclick=()=>{tab('R');report()};
 function tab(t){$('vT').classList.toggle('hide',t!=='T');$('vR').classList.toggle('hide',t!=='R');$('tT').classList.toggle('on',t==='T');$('tR').classList.toggle('on',t==='R')}
-const now0=new Date();$('month').value=now0.getFullYear()+'-'+pad(now0.getMonth()+1);
+const MONTHS=['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+function setRange(y,m){ // m: 0-based
+  $('dFrom').value=ymd(new Date(y,m,1));$('dTo').value=ymd(new Date(y,m+1,0));
+  $('fcat').value='';$('fplace').value='';report();
+}
+{const n=new Date();$('dFrom').value=ymd(new Date(n.getFullYear(),n.getMonth(),1));$('dTo').value=ymd(new Date(n.getFullYear(),n.getMonth()+1,0))}
+$('qThis').onclick=()=>{const n=new Date();setRange(n.getFullYear(),n.getMonth())};
+$('qPrev').onclick=()=>{const n=new Date();setRange(n.getFullYear(),n.getMonth()-1)};
+const catOf=l=>l.cat||NOCAT;
+function inRange(){const f=$('dFrom').value,t=$('dTo').value;return db.log.filter(l=>{const k=dkey(l.start);return(!f||k>=f)&&(!t||k<=t)})}
 function rows(){
-  const m=$('month').value,p=$('fplace').value;
-  return db.log.filter(l=>dkey(l.start).slice(0,7)===m&&(!p||l.place===p)).sort((a,b)=>a.start-b.start);
+  const c=$('fcat').value,p=$('fplace').value;
+  return inRange().filter(l=>(!c||catOf(l)===c)&&(!p||l.place===p)).sort((a,b)=>a.start-b.start);
 }
-function group(list,k){const o={};list.forEach(l=>{const n=l[k]||'—';o[n]=(o[n]||0)+l.ms});return Object.entries(o).sort((a,b)=>b[1]-a[1])}
+function group(list,fn){const o={};list.forEach(l=>{const n=fn(l)||'—';o[n]=(o[n]||0)+l.ms});return Object.entries(o).sort((a,b)=>b[1]-a[1])}
 function report(){
-  const m=$('month').value;
-  const places=[...new Set(db.log.filter(l=>dkey(l.start).slice(0,7)===m).map(l=>l.place).filter(Boolean))];
-  const cur=$('fplace').value;
-  $('fplace').innerHTML='<option value="">الكل</option>'+places.map(p=>`<option ${p===cur?'selected':''}>${esc(p)}</option>`).join('');
+  const R=inRange();
+  const keep=(id,vals,all)=>{const cur=$(id).value;$(id).innerHTML='<option value="">الكل</option>'+vals.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('');};
+  keep('fcat',[...new Set(R.map(catOf))]);
+  keep('fplace',[...new Set(R.map(l=>l.place).filter(Boolean))]);
   const L=rows(),tot=L.reduce((a,l)=>a+l.ms,0);
-  $('sumH').textContent=dec(tot);$('sumN').textContent=L.length;
-  const tb=g=>g.length?g.map(([n,ms])=>`<tr><td>${esc(n)}</td><td class="n">${hm(ms)}</td><td class="n">${dec(ms)} س</td></tr>`).join(''):'<tr><td style="color:var(--mu)">لا شيء</td></tr>';
-  $('byPlace').innerHTML=tb(group(L,'place'));$('byTask').innerHTML=tb(group(L,'task'));
-  $('det').innerHTML='<tr><th>التاريخ</th><th>المهمة / المكان</th><th>المدة</th><th></th></tr>'+(L.length?L.map(l=>`<tr><td class="n">${dkey(l.start).slice(5)}</td><td>${esc(l.task)}<br><small style="color:var(--mu)">${esc(l.place||'')}</small></td><td class="n">${hm(l.ms)}</td><td class="n"><button class="x" data-e="${l.id}">✎</button><button class="x" data-d="${l.id}">🗑</button></td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--mu)">لا سجلات في هذا الشهر</td></tr>');
+  $('sumT').textContent=hm(tot);$('sumD').textContent=dec(tot)+' ساعة';$('sumN').textContent=L.length;
+  const tb=g=>g.length?g.map(([n,ms])=>`<tr><td>${esc(n)}</td><td class="n">${hm(ms)}</td><td class="n">${dec(ms)}</td></tr>`).join(''):'<tr><td style="color:var(--mu)">لا شيء</td></tr>';
+  $('byCat').innerHTML=tb(group(L,catOf));$('byPlace').innerHTML=tb(group(L,l=>l.place));$('byTask').innerHTML=tb(group(L,l=>l.task));
+  $('det').innerHTML='<tr><th>التاريخ</th><th>المهمة / التصنيف</th><th>المدة</th><th></th></tr>'+(L.length?L.map(l=>`<tr><td class="n">${dkey(l.start).slice(5)}</td><td>${esc(l.task)}<br><small style="color:var(--mu)">${esc(catOf(l))}${l.place?' · '+esc(l.place):''}</small></td><td class="n">${hm(l.ms)}</td><td class="n"><button class="x" data-e="${l.id}">✎</button><button class="x" data-d="${l.id}">🗑</button></td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--mu)">لا سجلات في هذه الفترة</td></tr>');
 }
-$('month').onchange=()=>{$('fplace').value='';report()};$('fplace').onchange=report;
+$('dFrom').onchange=$('dTo').onchange=()=>{$('fcat').value='';$('fplace').value='';report()};
+$('fcat').onchange=$('fplace').onchange=report;
 $('det').onclick=e=>{
   const t=e.target.closest('button');if(!t)return;
   const d=t.dataset.d,ed=t.dataset.e;
@@ -239,21 +293,133 @@ $('det').onclick=e=>{
   if(ed){const l=db.log.find(x=>x.id==ed);const v=prompt('عدّل المدة بالدقائق:',Math.round(l.ms/60000));
     if(v!==null&&!isNaN(+v)&&+v>=0){l.ms=Math.round(+v*60000);save();report();render()}}
 };
-function dl(name,data,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click()}
-$('csv').onclick=()=>{
-  const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
-  const L=rows(),tot=L.reduce((a,l)=>a+l.ms,0);
-  let out='التاريخ,المهمة,المكان,الدقائق,الساعات\n';
-  out+=L.map(l=>[dkey(l.start),q(l.task),q(l.place||''),Math.round(l.ms/60000),dec(l.ms)].join(',')).join('\n');
-  out+='\n,,المجموع,'+Math.round(tot/60000)+','+dec(tot);
-  dl('ساعاتي-'+$('month').value+'.csv','﻿'+out,'text/csv;charset=utf-8');
+function dl(name,data,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove()}
+
+/* ---------- Excel export ---------- */
+function periodLabel(){
+  const f=$('dFrom').value,t=$('dTo').value;
+  if(f&&t){
+    const a=new Date(f+'T00:00:00'),b=new Date(t+'T00:00:00');
+    const whole=a.getDate()===1&&ymd(new Date(b.getFullYear(),b.getMonth()+1,0))===t&&a.getMonth()===b.getMonth()&&a.getFullYear()===b.getFullYear();
+    if(whole)return{short:MONTHS[a.getMonth()]+' '+a.getFullYear(),long:'شهر '+MONTHS[a.getMonth()]+' '+a.getFullYear()+' ('+f+' → '+t+')'};
+    return{short:f+' إلى '+t,long:'من '+f+' إلى '+t};
+  }
+  return{short:'كل الفترات',long:'كل الفترات'};
+}
+function autoName(){
+  const c=$('fcat').value,p=$('fplace').value;
+  return 'تقرير ساعات العمل - '+periodLabel().short+(c?' - '+c:'')+(p?' - '+p:'');
+}
+const cleanName=s=>s.replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,' ').trim().replace(/\.xlsx$/i,'');
+$('xl').onclick=()=>{
+  if(!rows().length){alert('لا توجد سجلات في الفترة المحددة.');return}
+  $('fname').value=autoName();$('dlg').showModal();$('fname').select();
 };
+$('dNo').onclick=()=>$('dlg').close();
+$('dAuto').onclick=()=>{$('fname').value=autoName()};
+$('dOk').onclick=async()=>{
+  const name=cleanName($('fname').value)||cleanName(autoName());
+  $('dlg').close();
+  try{await exportXlsx(name)}catch(err){console.error(err);alert('تعذّر إنشاء ملف Excel. تأكد أن الملف exceljs.min.js موجود بجانب الصفحة.')}
+};
+$('fname').addEventListener('keydown',e=>{if(e.key==='Enter')$('dOk').click()});
+function loadEx(){return window.ExcelJS?Promise.resolve():new Promise((ok,no)=>{const s=document.createElement('script');s.src='exceljs.min.js';s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
+
+async function exportXlsx(name){
+  await loadEx();
+  const L=rows(),tot=L.reduce((a,l)=>a+l.ms,0);
+  const NAVY='FF0F172A',GOLD='FFFBBF24',SOFT='FFFEF3C7',ZEBRA='FFF1F5F9',LINE='FFCBD5E1',MUTE='FF64748B';
+  const wb=new ExcelJS.Workbook();wb.creator='ساعاتي';wb.created=new Date();
+  const ws=wb.addWorksheet('تقرير الساعات',{
+    views:[{rightToLeft:true,showGridLines:false}],
+    pageSetup:{paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:.4,right:.4,top:.5,bottom:.6,header:.3,footer:.3}},
+    headerFooter:{oddFooter:'&Rصفحة &P من &N'}
+  });
+  ws.columns=[{width:6},{width:14},{width:12},{width:36},{width:20},{width:20},{width:24},{width:12}];
+  const FONT='Arial';
+  const border={top:{style:'thin',color:{argb:LINE}},bottom:{style:'thin',color:{argb:LINE}},left:{style:'thin',color:{argb:LINE}},right:{style:'thin',color:{argb:LINE}}};
+  const fill=c=>({type:'pattern',pattern:'solid',fgColor:{argb:c}});
+  const al=(h='center')=>({horizontal:h,vertical:'middle',readingOrder:'rtl',wrapText:true});
+  const style=(cell,o)=>{Object.assign(cell,{});if(o.font)cell.font={name:FONT,...o.font};if(o.fill)cell.fill=fill(o.fill);if(o.al)cell.alignment=o.al;if(o.border)cell.border=border};
+  let r=1;
+  // title banner
+  ws.mergeCells(r,1,r,8);let c=ws.getCell(r,1);c.value='تقرير ساعات العمل';
+  style(c,{font:{size:22,bold:true,color:{argb:GOLD}},fill:NAVY,al:al()});ws.getRow(r).height=44;r++;
+  ws.mergeCells(r,1,r,8);c=ws.getCell(r,1);
+  const fl=[];if($('fcat').value)fl.push('التصنيف: '+$('fcat').value);if($('fplace').value)fl.push('المكان: '+$('fplace').value);
+  c.value='الفترة: '+periodLabel().long+(fl.length?'   |   '+fl.join('   |   '):'');
+  style(c,{font:{size:12,color:{argb:'FFFFFFFF'}},fill:'FF1E293B',al:al()});ws.getRow(r).height=26;r++;
+  ws.getRow(r).height=10;r++;
+  // key figures
+  const kv=[['إجمالي الوقت',hm(tot),null],['إجمالي الساعات (عشري)',+(tot/3600000).toFixed(2),'0.00'],['عدد الجلسات',L.length,'0']];
+  kv.forEach(([k,v,fmt])=>{
+    ws.mergeCells(r,1,r,3);ws.mergeCells(r,4,r,5);
+    const a=ws.getCell(r,1),b=ws.getCell(r,4);a.value=k;b.value=v;
+    style(a,{font:{size:12,bold:true,color:{argb:NAVY}},fill:SOFT,al:al('right'),border:1});
+    style(b,{font:{size:14,bold:true,color:{argb:NAVY}},fill:'FFFFFFFF',al:al(),border:1});if(fmt)b.numFmt=fmt;
+    [2,3,5].forEach(i=>{ws.getCell(r,i).border=border});
+    ws.getRow(r).height=28;r++;
+  });
+  ws.getRow(r).height=12;r++;
+  // summary tables
+  const section=(title,groups)=>{
+    if(!groups.length)return;
+    ws.mergeCells(r,1,r,8);c=ws.getCell(r,1);c.value=title;
+    style(c,{font:{size:13,bold:true,color:{argb:NAVY}},fill:GOLD,al:al('right')});ws.getRow(r).height=26;r++;
+    ['البند','','','المدة','الساعات','النسبة'].forEach((h,i)=>{});
+    ws.mergeCells(r,1,r,3);
+    [[1,'البند'],[4,'المدة'],[5,'الساعات'],[6,'النسبة']].forEach(([i,h])=>{const x=ws.getCell(r,i);x.value=h;style(x,{font:{size:11,bold:true,color:{argb:'FFFFFFFF'}},fill:NAVY,al:al(),border:1})});
+    [2,3].forEach(i=>{ws.getCell(r,i).border=border;ws.getCell(r,i).fill=fill(NAVY)});
+    ws.getRow(r).height=24;r++;
+    groups.forEach(([n,ms],i)=>{
+      ws.mergeCells(r,1,r,3);
+      const bg=i%2?ZEBRA:'FFFFFFFF';
+      const cells=[[1,n,null,'right'],[4,hm(ms),null,'center'],[5,+(ms/3600000).toFixed(2),'0.00','center'],[6,tot?ms/tot:0,'0%','center']];
+      cells.forEach(([ci,v,fmt,h])=>{const x=ws.getCell(r,ci);x.value=v;style(x,{font:{size:11,color:{argb:NAVY}},fill:bg,al:al(h),border:1});if(fmt)x.numFmt=fmt});
+      [2,3].forEach(ci=>{ws.getCell(r,ci).border=border;ws.getCell(r,ci).fill=fill(bg)});
+      ws.getRow(r).height=22;r++;
+    });
+    ws.getRow(r).height=12;r++;
+  };
+  section('الملخص حسب التصنيف',group(L,catOf));
+  const pg=group(L,l=>l.place).filter(([n])=>n!=='—');if(pg.length)section('الملخص حسب المكان',pg);
+  // details
+  ws.mergeCells(r,1,r,8);c=ws.getCell(r,1);c.value='تفاصيل الجلسات';
+  style(c,{font:{size:13,bold:true,color:{argb:NAVY}},fill:GOLD,al:al('right')});ws.getRow(r).height=26;r++;
+  ['م','التاريخ','اليوم','المهمة','التصنيف','المكان','المدة','الساعات'].forEach((h,i)=>{const x=ws.getCell(r,i+1);x.value=h;style(x,{font:{size:11,bold:true,color:{argb:'FFFFFFFF'}},fill:NAVY,al:al(),border:1})});
+  ws.getRow(r).height=26;const hdr=r;r++;
+  const DAYS=['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  const first=r;
+  L.forEach((l,i)=>{
+    const bg=i%2?ZEBRA:'FFFFFFFF';
+    const vals=[i+1,new Date(dkey(l.start)+'T00:00:00'),DAYS[new Date(l.start).getDay()],l.task,catOf(l),l.place||'—',hm(l.ms),+(l.ms/3600000).toFixed(2)];
+    vals.forEach((v,j)=>{const x=ws.getCell(r,j+1);x.value=v;
+      style(x,{font:{size:11,color:{argb:NAVY}},fill:bg,al:al(j===3?'right':'center'),border:1});
+      if(j===1)x.numFmt='yyyy-mm-dd';if(j===7)x.numFmt='0.00'});
+    ws.getRow(r).height=22;r++;
+  });
+  // total row
+  ws.mergeCells(r,1,r,6);c=ws.getCell(r,1);c.value='المجموع';
+  style(c,{font:{size:12,bold:true,color:{argb:NAVY}},fill:GOLD,al:al('right'),border:1});
+  [2,3,4,5,6].forEach(i=>{ws.getCell(r,i).border=border;ws.getCell(r,i).fill=fill(GOLD)});
+  const g=ws.getCell(r,7);g.value=hm(tot);style(g,{font:{size:12,bold:true,color:{argb:NAVY}},fill:GOLD,al:al(),border:1});
+  const h=ws.getCell(r,8);h.value={formula:`SUM(H${first}:H${r-1})`,result:+(tot/3600000).toFixed(2)};h.numFmt='0.00';
+  style(h,{font:{size:12,bold:true,color:{argb:NAVY}},fill:GOLD,al:al(),border:1});
+  ws.getRow(r).height=28;r++;
+  ws.getRow(r).height=10;r++;
+  ws.mergeCells(r,1,r,8);c=ws.getCell(r,1);
+  c.value='أُنشئ بواسطة ساعاتي · '+new Date().toLocaleDateString('en-GB');
+  style(c,{font:{size:10,italic:true,color:{argb:MUTE}},al:al()});
+  ws.autoFilter={from:{row:hdr,column:1},to:{row:r-3,column:8}};
+  const buf=await wb.xlsx.writeBuffer();
+  dl(name+'.xlsx',buf,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
 $('prn').onclick=()=>window.print();
 $('bk').onclick=()=>dl('sa3ati-backup.json',JSON.stringify(db),'application/json');
 $('rs').onclick=()=>$('file').click();
 $('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
   r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.log))throw 0;
-    if(confirm('سيتم استبدال البيانات الحالية. متابعة؟')){db=Object.assign({log:[],run:null,remind:30},d);save();render();report()}}catch(x){alert('ملف غير صالح')}};
+    if(confirm('سيتم استبدال البيانات الحالية. متابعة؟')){db=Object.assign({log:[],run:null,remind:30,cats:['مركز الشباب','مدرسة','عمل حر'],lastCat:''},d);save();render();report()}}catch(x){alert('ملف غير صالح')}};
   r.readAsText(f)};
 
 setInterval(tick,1000);
