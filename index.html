@@ -17,9 +17,9 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font-family:"Segoe UI",Tahoma,Arial,sans-serif;min-height:100vh}
 main{max-width:520px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:6px 0 14px;display:flex;justify-content:space-between;align-items:center}
+h1{font-size:20px;margin:6px 0 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 .tabs{display:flex;gap:8px}
-.tabs button{background:none;border:1px solid var(--line);color:var(--mu);border-radius:20px;padding:6px 14px;font:inherit;font-size:14px;cursor:pointer}
+.tabs button{background:none;border:1px solid var(--line);color:var(--mu);border-radius:20px;padding:6px 11px;font:inherit;font-size:13px;cursor:pointer}
 .tabs button.on{background:var(--gold);color:#0f172a;border-color:var(--gold);font-weight:700}
 .card{background:var(--card);border-radius:16px;padding:18px;margin-bottom:14px}
 label{display:block;font-size:13px;color:var(--mu);margin:10px 0 4px}
@@ -60,6 +60,14 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 .chip{padding:9px 14px;border-radius:20px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:inherit;font-size:15px;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 .chip.on{background:var(--gold);color:#0f172a;border-color:var(--gold);font-weight:700}
 .chip.add{border-style:dashed;color:var(--mu)}
+.trow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.trow:last-child{border-bottom:0}
+.trow input[type=checkbox]{width:24px;height:24px;flex:none;padding:0;accent-color:#22c55e}
+.trow .tt{flex:1;min-width:0}
+.trow .tt small{color:var(--mu);font-size:12px}
+.trow.done .tt div{text-decoration:line-through;color:var(--mu)}
+.sec{font-weight:700;font-size:14px;margin:0 0 4px}
+.sec.late{color:#ef4444}
 #toast{position:fixed;left:12px;right:12px;bottom:14px;max-width:520px;margin:0 auto;background:#22c55e;color:#fff;padding:12px 16px;border-radius:12px;font-size:14px;line-height:1.6;z-index:99;display:none;text-align:center}
 #toast.bad{background:#ef4444}
 .authwrap{position:fixed;inset:0;background:var(--bg);z-index:90;overflow:auto;display:flex;align-items:center}.authwrap main{width:100%}
@@ -83,7 +91,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 <div id="toast"></div>
 <main>
 <h1><span>⏱ ساعاتي</span>
-<span class="tabs"><button id="tT" class="on">المؤقت</button><button id="tR">التقرير</button></span></h1>
+<span class="tabs"><button id="tT" class="on">المؤقت</button><button id="tM">مهامي</button><button id="tR">التقرير</button></span></h1>
 
 <section id="vT">
   <div id="pwa" class="card hide">
@@ -116,6 +124,24 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label>ذكّرني كل</label>
     <select id="remind"><option value="15">15 دقيقة</option><option value="30">30 دقيقة</option><option value="60">ساعة</option><option value="0">لا تذكّرني</option></select>
     <div class="hint" id="notiHint"></div>
+  </div>
+</section>
+
+<section id="vM" class="hide">
+  <div class="card">
+    <label style="margin-top:0">اليوم</label><input type="date" id="mDate">
+    <div class="small"><button id="mPrev">‹ السابق</button><button id="mToday">اليوم</button><button id="mNext">التالي ›</button></div>
+    <div id="mSum" class="hint" style="font-size:13px"></div>
+  </div>
+  <div id="mList"></div>
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:6px">➕ مهمة جديدة</div>
+    <input id="mTitle" placeholder="اسم المهمة" autocomplete="off">
+    <label>التصنيف</label><select id="mCat"></select>
+    <label>النوع</label>
+    <div class="chips" id="mKind"><button type="button" class="chip on" data-k="once">📌 مجدولة ليوم محدد</button><button type="button" class="chip" data-k="daily">🔁 يومية (كل يوم)</button></div>
+    <div id="mWhenWrap"><label>يوم التنفيذ</label><input type="date" id="mWhen"></div>
+    <button class="big go" id="mAdd">إضافة المهمة</button>
   </div>
 </section>
 
@@ -228,20 +254,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 const $=id=>document.getElementById(id);
 const LEGACY='sa3ati.v1';
 let K=null,UID=null,lastPushed='',pushT;
-const DEF=()=>({log:[],runs:[],remind:30,cats:['مركز الشباب','مدرسة','عمل حر'],lastCat:'',exp:null});
+const DEF=()=>({log:[],runs:[],todos:[],remind:30,cats:['مركز الشباب','مدرسة','عمل حر'],lastCat:'',exp:null});
 const EXP0={c:{idx:false,date:true,day:true,task:true,cat:false,place:false},s:{key:true,bycat:false,byplace:false},owner:''};
 let db=DEF();
 function norm(){
   if(db.run){db.runs.push(Object.assign({id:db.run.t0},db.run));delete db.run}
   if(!Array.isArray(db.runs))db.runs=[];
   if(!Array.isArray(db.log))db.log=[];
+  if(!Array.isArray(db.todos))db.todos=[];
   if(!db.cats||!db.cats.length)db.cats=DEF().cats;
   if(!db.exp)db.exp=EXP0;
 }
 norm();
 const NOCAT='بدون تصنيف';
 const clone=o=>JSON.parse(JSON.stringify(o));
-const stateOf=()=>clone({runs:db.runs,cats:db.cats,remind:db.remind,lastCat:db.lastCat||'',exp:db.exp});
+const stateOf=()=>clone({runs:db.runs,todos:db.todos,cats:db.cats,remind:db.remind,lastCat:db.lastCat||'',exp:db.exp});
 const saveLocal=()=>{if(!K)return;try{localStorage.setItem(K,JSON.stringify(db))}catch(e){}};
 function pushState(){
   if(!UID||!window.CLOUD)return;
@@ -360,6 +387,7 @@ function render(){
   $('pl').innerHTML=uniq('place').map(v=>`<option value="${esc(v)}">`).join('');
   $('remind').value=String(db.remind);
   fillCats();
+  todoRefresh();
   tick();
 }
 $('runs').onclick=e=>{
@@ -410,8 +438,8 @@ $('task').addEventListener('change',()=>{
 $('task').addEventListener('keydown',e=>{if(e.key==='Enter')start()});
 
 /* ---------- report ---------- */
-$('tT').onclick=()=>tab('T');$('tR').onclick=()=>{tab('R');report()};
-function tab(t){$('vT').classList.toggle('hide',t!=='T');$('vR').classList.toggle('hide',t!=='R');$('tT').classList.toggle('on',t==='T');$('tR').classList.toggle('on',t==='R')}
+$('tT').onclick=()=>tab('T');$('tM').onclick=()=>{tab('M');renderTodos()};$('tR').onclick=()=>{tab('R');report()};
+function tab(t){['T','M','R'].forEach(k=>{$('v'+k).classList.toggle('hide',t!==k);$('t'+k).classList.toggle('on',t===k)})}
 const MONTHS=['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
 const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 function setRange(y,m){ // m: 0-based
@@ -599,9 +627,86 @@ $('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileRe
       const ids=new Set(db.log.map(l=>String(l.id)));
       d.log.forEach(l=>{if(!ids.has(String(l.id))){db.log.push(l);cloudLog(l)}});
       (d.cats||[]).forEach(c=>{if(!db.cats.includes(c))db.cats.push(c)});
+      (d.todos||[]).forEach(t=>{if(!db.todos.some(x=>x.id==t.id))db.todos.push(t)});
       save();render();report();toast('✔ تمت إضافة السجلات من النسخة الاحتياطية')}}catch(x){toast('ملف غير صالح',1)}};
   r.readAsText(f)};
 
+
+/* ---------- مهامي ---------- */
+const DAYS_AR=['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+const tdKey=()=>ymd(new Date());
+let mDay=null,mKind='once';
+const isDone=(x,day)=>x.kind==='daily'?!!(x.done&&x.done[day]):!!x.done;
+function todosFor(day){
+  const t=db.todos,today=tdKey();
+  return {
+    daily:t.filter(x=>x.kind==='daily'&&x.from<=day),
+    once:t.filter(x=>x.kind==='once'&&x.date===day),
+    late:day===today?t.filter(x=>x.kind==='once'&&x.date<day&&!x.done):[]
+  };
+}
+function todoRefresh(){
+  const g=todosFor(tdKey()),all=[...g.daily,...g.once,...g.late];
+  const n=all.filter(x=>!isDone(x,tdKey())).length;
+  $('tM').textContent='مهامي'+(n?' ('+n+')':'');
+  if(!$('vM').classList.contains('hide'))renderTodos();
+}
+function renderTodos(){
+  if(!mDay)mDay=tdKey();
+  const day=mDay,g=todosFor(day);
+  $('mDate').value=day;
+  const d=new Date(day+'T00:00:00');
+  const all=[...g.daily,...g.once,...g.late],done=all.filter(x=>isDone(x,day)).length;
+  $('mSum').textContent=DAYS_AR[d.getDay()]+(day===tdKey()?' · اليوم':'')+(all.length?' — أُنجز '+done+' من '+all.length:' — لا توجد مهام');
+  const row=x=>`<div class="trow ${isDone(x,day)?'done':''}" data-t="${x.id}">
+    <input type="checkbox" data-a="chk" ${isDone(x,day)?'checked':''}>
+    <div class="tt"><div>${esc(x.title)}</div><small>🏷 ${esc(x.cat||NOCAT)}${x.kind==='once'&&x.date!==day?' · كانت يوم '+x.date:''}</small></div>
+    <button class="x" data-a="go" title="ابدأ مؤقتًا لهذه المهمة">▶</button><button class="x" data-a="del" title="حذف">🗑</button></div>`;
+  const sec=(title,list,cls)=>list.length?`<div class="card"><div class="sec ${cls||''}">${title}</div>${list.map(row).join('')}</div>`:'';
+  $('mList').innerHTML=sec('⚠ متأخرة',g.late,'late')+sec('📌 مهام مجدولة',g.once)+sec('🔁 مهام يومية',g.daily)
+    ||'<div class="card hint" style="text-align:center">لا توجد مهام لهذا اليوم. أضف مهمة من الأسفل.</div>';
+  const cur=$('mCat').value||db.lastCat||db.cats[0];
+  $('mCat').innerHTML=db.cats.map(c=>`<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('');
+  if(!$('mWhen').value)$('mWhen').value=day;
+  $('mWhenWrap').classList.toggle('hide',mKind!=='once');
+}
+const shiftDay=n=>{const d=new Date((mDay||tdKey())+'T00:00:00');d.setDate(d.getDate()+n);mDay=ymd(d);$('mWhen').value=mDay;renderTodos()};
+$('mPrev').onclick=()=>shiftDay(-1);$('mNext').onclick=()=>shiftDay(1);
+$('mToday').onclick=()=>{mDay=tdKey();$('mWhen').value=mDay;renderTodos()};
+$('mDate').onchange=e=>{if(e.target.value){mDay=e.target.value;$('mWhen').value=mDay;renderTodos()}};
+$('mKind').onclick=e=>{const b=e.target.closest('[data-k]');if(!b)return;mKind=b.dataset.k;
+  document.querySelectorAll('#mKind .chip').forEach(c=>c.classList.toggle('on',c===b));$('mWhenWrap').classList.toggle('hide',mKind!=='once')};
+function addTodo(){
+  const title=$('mTitle').value.trim();
+  if(!title){$('mTitle').focus();return}
+  const t={id:Date.now(),title,cat:$('mCat').value,kind:mKind};
+  if(mKind==='once'){t.date=$('mWhen').value||mDay||tdKey();t.done=false}
+  else{t.from=mDay||tdKey();t.done={}}
+  db.todos.push(t);save();$('mTitle').value='';
+  if(mKind==='once')mDay=t.date;
+  renderTodos();todoRefresh();toast('✔ أُضيفت المهمة');
+}
+$('mAdd').onclick=addTodo;
+$('mTitle').addEventListener('keydown',e=>{if(e.key==='Enter')addTodo()});
+$('mList').addEventListener('click',e=>{
+  const b=e.target.closest('[data-a]');if(!b)return;
+  const row=b.closest('[data-t]');const x=db.todos.find(t=>t.id==row.dataset.t);if(!x)return;
+  if(b.dataset.a==='go'){
+    $('task').value=x.title;
+    if(x.cat&&db.cats.includes(x.cat)){db.lastCat=x.cat;fillCats(x.cat)}
+    start();tab('T');toast('▶ بدأ المؤقت: '+x.title);
+  }else if(b.dataset.a==='del'){
+    if(confirm('حذف المهمة «'+x.title+'»؟'+(x.kind==='daily'?'\nستُحذف من كل الأيام.':''))){db.todos=db.todos.filter(t=>t!==x);save();renderTodos();todoRefresh()}
+  }
+});
+$('mList').addEventListener('change',e=>{
+  if(e.target.dataset.a!=='chk')return;
+  const x=db.todos.find(t=>t.id==e.target.closest('[data-t]').dataset.t);if(!x)return;
+  const on=e.target.checked;
+  if(x.kind==='daily'){x.done=x.done||{};if(on)x.done[mDay]=true;else delete x.done[mDay]}
+  else x.done=on;
+  save();renderTodos();todoRefresh();
+});
 
 /* ---------- account & sync ---------- */
 const AERR={'auth/invalid-credential':'البريد أو كلمة المرور غير صحيحة','auth/wrong-password':'البريد أو كلمة المرور غير صحيحة','auth/user-not-found':'البريد أو كلمة المرور غير صحيحة','auth/email-already-in-use':'هذا البريد مسجّل مسبقًا، اضغط «دخول»','auth/weak-password':'كلمة المرور ضعيفة (6 أحرف على الأقل)','auth/invalid-email':'صيغة البريد غير صحيحة','auth/too-many-requests':'محاولات كثيرة، انتظر قليلًا ثم أعد المحاولة','auth/network-request-failed':'تحقق من اتصال الإنترنت','auth/missing-password':'اكتب كلمة المرور'};
@@ -648,6 +753,7 @@ window.appState=function(data,pending){
   if(pending)return;
   const prev={};db.runs.forEach(r=>prev[r.id]=r);
   db.runs=(data.runs||[]).map(r=>{const q=prev[r.id];return q?Object.assign({},r,{lastR:q.lastR,lastM:q.lastM}):r});
+  if(Array.isArray(data.todos))db.todos=data.todos;
   if(data.cats&&data.cats.length)db.cats=data.cats;
   if(data.remind!=null)db.remind=data.remind;
   db.lastCat=data.lastCat||db.lastCat||'';
