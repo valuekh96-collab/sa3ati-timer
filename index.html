@@ -54,9 +54,24 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 @media print{.tabs,.noprint,.x,.small{display:none!important}body{background:#fff;color:#000}.card{background:#fff;border:1px solid #ccc}.sum b{color:#000}}
 #toast{position:fixed;left:12px;right:12px;bottom:14px;max-width:520px;margin:0 auto;background:#22c55e;color:#fff;padding:12px 16px;border-radius:12px;font-size:14px;line-height:1.6;z-index:99;display:none;text-align:center}
 #toast.bad{background:#ef4444}
+.authwrap{position:fixed;inset:0;background:var(--bg);z-index:90;overflow:auto;display:flex;align-items:center}.authwrap main{width:100%}
 </style>
 </head>
 <body>
+<div id="auth" class="authwrap"><main>
+  <div class="card">
+    <div style="font-size:26px;font-weight:700;text-align:center;margin:6px 0 4px">⏱ ساعاتي</div>
+    <div id="aLoad" class="hint" style="text-align:center">جارٍ التحقق من الحساب…</div>
+    <div id="aForm" class="hide">
+      <div class="hint" style="text-align:center">سجّل دخولك لتظهر بياناتك نفسها على كل أجهزتك.</div>
+      <label>البريد الإلكتروني</label><input id="aEmail" type="email" dir="ltr" autocomplete="email" placeholder="name@example.com">
+      <label>كلمة المرور</label><input id="aPass" type="password" dir="ltr" autocomplete="current-password" placeholder="6 أحرف على الأقل">
+      <div class="row"><button class="big go" id="aIn">دخول</button><button class="big pause" id="aUp">إنشاء حساب</button></div>
+      <div class="small"><button id="aReset">نسيت كلمة المرور؟</button></div>
+    </div>
+    <div id="aMsg" class="hint" style="text-align:center"></div>
+  </div>
+</main></div>
 <div id="toast"></div>
 <main>
 <h1><span>⏱ ساعاتي</span>
@@ -137,7 +152,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <div class="card noprint">
     <div class="small" style="margin-top:0"><button id="bk">💾 نسخة احتياطية</button><button id="rs">📂 استرجاع</button></div>
     <input type="file" id="file" accept=".json" class="hide">
-    <div class="hint">بياناتك محفوظة في هذا المتصفح فقط. خذ نسخة احتياطية من وقت لآخر.</div>
+    <div class="hint">بياناتك محفوظة في حسابك وتتزامن بين أجهزتك. النسخة الاحتياطية اختيارية.</div>
+    <div class="small"><span style="flex:2;align-self:center;font-size:13px;color:var(--mu);direction:ltr;text-align:right" id="acct"></span><button id="lo">تسجيل الخروج</button></div>
   </div>
 </section>
 </main>
@@ -189,15 +205,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 //# sourceMappingURL=exceljs.min.js.map</script>
 <script>
 const $=id=>document.getElementById(id);
-const K='sa3ati.v1';
-let db={log:[],runs:[],remind:30,cats:['مركز الشباب','مدرسة','عمل حر'],lastCat:''};
-try{const s=JSON.parse(localStorage.getItem(K));if(s)db=Object.assign(db,s)}catch(e){}
-if(db.run){db.runs.push(Object.assign({id:db.run.t0},db.run));delete db.run}
-if(!Array.isArray(db.runs))db.runs=[];
+const LEGACY='sa3ati.v1';
+let K=null,UID=null,lastPushed='',pushT;
+const DEF=()=>({log:[],runs:[],remind:30,cats:['مركز الشباب','مدرسة','عمل حر'],lastCat:'',exp:null});
 const EXP0={c:{idx:false,date:true,day:true,task:true,cat:false,place:false},s:{key:true,bycat:false,byplace:false},owner:''};
-if(!db.exp)db.exp=EXP0;
+let db=DEF();
+function norm(){
+  if(db.run){db.runs.push(Object.assign({id:db.run.t0},db.run));delete db.run}
+  if(!Array.isArray(db.runs))db.runs=[];
+  if(!Array.isArray(db.log))db.log=[];
+  if(!db.cats||!db.cats.length)db.cats=DEF().cats;
+  if(!db.exp)db.exp=EXP0;
+}
+norm();
 const NOCAT='بدون تصنيف';
-const save=()=>{try{localStorage.setItem(K,JSON.stringify(db))}catch(e){}};
+const clone=o=>JSON.parse(JSON.stringify(o));
+const stateOf=()=>clone({runs:db.runs,cats:db.cats,remind:db.remind,lastCat:db.lastCat||'',exp:db.exp});
+const saveLocal=()=>{if(!K)return;try{localStorage.setItem(K,JSON.stringify(db))}catch(e){}};
+function pushState(){
+  if(!UID||!window.CLOUD)return;
+  const st=stateOf();lastPushed=JSON.stringify(st);st.updated=Date.now();
+  CLOUD.saveState(UID,st).catch(e=>console.error(e));
+}
+const save=()=>{saveLocal();if(!UID||!window.CLOUD)return;clearTimeout(pushT);pushT=setTimeout(pushState,500)};
+const cloudLog=e=>{if(UID&&window.CLOUD)CLOUD.saveLog(UID,clone(e)).catch(x=>console.error(x))};
+const cloudDel=id=>{if(UID&&window.CLOUD)CLOUD.delLog(UID,id).catch(x=>console.error(x))};
 const pad=n=>String(n).padStart(2,'0');
 const hms=ms=>{const s=Math.floor(ms/1000);return pad(Math.floor(s/3600))+':'+pad(Math.floor(s%3600/60))+':'+pad(s%60)};
 const hm=ms=>{
@@ -257,7 +289,8 @@ function pause(id){
 function stop(id){
   const r=getRun(id);if(!r)return;
   const ms=elapsed(r);
-  db.log.push({id:Date.now(),task:r.task,place:r.place,cat:r.cat||'',start:r.t0,end:Date.now(),ms});
+  const ent={id:Date.now(),task:r.task,place:r.place,cat:r.cat||'',start:r.t0,end:Date.now(),ms};
+  db.log.push(ent);cloudLog(ent);
   db.runs=db.runs.filter(x=>x.id!=id);save();
   closeNoti('run-'+id);closeNoti('remind-'+id);
   render();
@@ -368,9 +401,9 @@ $('fcat').onchange=$('fplace').onchange=report;
 $('det').onclick=e=>{
   const t=e.target.closest('button');if(!t)return;
   const d=t.dataset.d,ed=t.dataset.e;
-  if(d&&confirm('حذف هذا السجل؟')){db.log=db.log.filter(l=>l.id!=d);save();report();render()}
+  if(d&&confirm('حذف هذا السجل؟')){db.log=db.log.filter(l=>l.id!=d);cloudDel(d);save();report();render()}
   if(ed){const l=db.log.find(x=>x.id==ed);const v=prompt('عدّل المدة بالدقائق:',Math.round(l.ms/60000));
-    if(v!==null&&!isNaN(+v)&&+v>=0){l.ms=Math.round(+v*60000);save();report();render()}}
+    if(v!==null&&!isNaN(+v)&&+v>=0){l.ms=Math.round(+v*60000);cloudLog(l);save();report();render()}}
 };
 function dl(name,data,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove()}
 
@@ -519,12 +552,102 @@ $('bk').onclick=()=>dl('sa3ati-backup.json',JSON.stringify(db),'application/json
 $('rs').onclick=()=>$('file').click();
 $('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
   r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.log))throw 0;
-    if(confirm('سيتم استبدال البيانات الحالية. متابعة؟')){db=Object.assign({log:[],runs:[],remind:30,cats:['مركز الشباب','مدرسة','عمل حر'],lastCat:''},d);save();render();report()}}catch(x){alert('ملف غير صالح')}};
+    if(confirm('سيتم إضافة سجلات النسخة الاحتياطية إلى حسابك. متابعة؟')){
+      const ids=new Set(db.log.map(l=>String(l.id)));
+      d.log.forEach(l=>{if(!ids.has(String(l.id))){db.log.push(l);cloudLog(l)}});
+      (d.cats||[]).forEach(c=>{if(!db.cats.includes(c))db.cats.push(c)});
+      save();render();report();toast('✔ تمت إضافة السجلات من النسخة الاحتياطية')}}catch(x){toast('ملف غير صالح',1)}};
   r.readAsText(f)};
+
+
+/* ---------- account & sync ---------- */
+const AERR={'auth/invalid-credential':'البريد أو كلمة المرور غير صحيحة','auth/wrong-password':'البريد أو كلمة المرور غير صحيحة','auth/user-not-found':'البريد أو كلمة المرور غير صحيحة','auth/email-already-in-use':'هذا البريد مسجّل مسبقًا، اضغط «دخول»','auth/weak-password':'كلمة المرور ضعيفة (6 أحرف على الأقل)','auth/invalid-email':'صيغة البريد غير صحيحة','auth/too-many-requests':'محاولات كثيرة، انتظر قليلًا ثم أعد المحاولة','auth/network-request-failed':'تحقق من اتصال الإنترنت','auth/missing-password':'اكتب كلمة المرور'};
+function aMsg(t,bad){const m=$('aMsg');m.textContent=t;m.style.color=bad?'#ef4444':'var(--mu)'}
+function showAuthForm(){$('aLoad').classList.add('hide');$('aForm').classList.remove('hide');$('auth').classList.remove('hide')}
+async function authDo(fn){
+  const e=$('aEmail').value.trim(),p=$('aPass').value;
+  if(!e||!p){aMsg('اكتب البريد وكلمة المرور',1);return}
+  aMsg('جارٍ المعالجة…');
+  try{await fn(e,p)}catch(err){aMsg(AERR[err.code]||('تعذّر: '+(err.code||err.message)),1)}
+}
+$('aIn').onclick=()=>authDo((e,p)=>CLOUD.login(e,p));
+$('aUp').onclick=()=>authDo((e,p)=>CLOUD.signup(e,p));
+$('aPass').addEventListener('keydown',e=>{if(e.key==='Enter')$('aIn').click()});
+$('aReset').onclick=async()=>{
+  const e=$('aEmail').value.trim();
+  if(!e){aMsg('اكتب بريدك أولًا ثم اضغط «نسيت كلمة المرور»',1);return}
+  try{await CLOUD.reset(e);aMsg('أُرسل رابط استعادة كلمة المرور إلى بريدك (تحقق من البريد المزعج أيضًا).')}catch(err){aMsg(AERR[err.code]||('تعذّر: '+(err.code||err.message)),1)}
+};
+$('lo').onclick=()=>{if(window.CLOUD)CLOUD.logout()};
+setTimeout(()=>{if(!window.CLOUD){showAuthForm();aMsg('تعذّر الاتصال بالخادم. تحقق من الإنترنت ثم أعد تحميل الصفحة.',1)}},12000);
+
+window.appIn=function(u){
+  UID=u.uid;K='sa3ati.v2.'+UID;
+  let local=null,legacy=null;
+  try{local=JSON.parse(localStorage.getItem(K))}catch(e){}
+  if(!local){try{legacy=JSON.parse(localStorage.getItem(LEGACY))}catch(e){}}
+  db=Object.assign(DEF(),local||legacy||{});norm();lastPushed='';
+  if(legacy){
+    db.log.forEach(cloudLog);
+    try{localStorage.setItem(LEGACY+'.migrated',localStorage.getItem(LEGACY));localStorage.removeItem(LEGACY)}catch(e){}
+  }
+  saveLocal();
+  $('acct').textContent=u.email;
+  $('auth').classList.add('hide');$('aPass').value='';aMsg('');
+  render();
+};
+window.appOut=function(){
+  UID=null;K=null;db=DEF();norm();render();
+  $('acct').textContent='';showAuthForm();
+};
+window.appState=function(data,pending){
+  if(!data){if(!pending)pushState();return}
+  if(pending)return;
+  const prev={};db.runs.forEach(r=>prev[r.id]=r);
+  db.runs=(data.runs||[]).map(r=>{const q=prev[r.id];return q?Object.assign({},r,{lastR:q.lastR,lastM:q.lastM}):r});
+  if(data.cats&&data.cats.length)db.cats=data.cats;
+  if(data.remind!=null)db.remind=data.remind;
+  db.lastCat=data.lastCat||db.lastCat||'';
+  if(data.exp)db.exp=data.exp;
+  norm();saveLocal();render();
+  if(!$('vR').classList.contains('hide'))report();
+};
+window.appLog=function(list){
+  db.log=list.sort((a,b)=>a.start-b.start);saveLocal();render();
+  if(!$('vR').classList.contains('hide'))report();
+};
 
 setInterval(tick,1000);
 document.addEventListener('visibilitychange',tick);
 hint();render();
+</script>
+<script type="module">
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,sendPasswordResetEmail} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,setDoc,deleteDoc,collection,onSnapshot} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+const cfg={apiKey:"AIzaSyBLNGcXdMsDOSIZ37gvAj1MAPlAVXRia9c",authDomain:"sa3ati-hours-2611.firebaseapp.com",projectId:"sa3ati-hours-2611",storageBucket:"sa3ati-hours-2611.firebasestorage.app",messagingSenderId:"747238656482",appId:"1:747238656482:web:5d9d9f2bfd67b15ff5d1bb"};
+const app=initializeApp(cfg);
+const auth=getAuth(app);
+let fs;
+try{fs=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})})}
+catch(e){fs=initializeFirestore(app,{})}
+let unsubs=[];
+window.CLOUD={
+  login:(e,p)=>signInWithEmailAndPassword(auth,e,p),
+  signup:(e,p)=>createUserWithEmailAndPassword(auth,e,p),
+  reset:e=>sendPasswordResetEmail(auth,e),
+  logout:()=>signOut(auth),
+  saveState:(uid,st)=>setDoc(doc(fs,'users',uid,'meta','state'),st),
+  saveLog:(uid,e)=>setDoc(doc(fs,'users',uid,'log',String(e.id)),e),
+  delLog:(uid,id)=>deleteDoc(doc(fs,'users',uid,'log',String(id)))
+};
+onAuthStateChanged(auth,u=>{
+  unsubs.forEach(f=>f());unsubs=[];
+  if(!u){window.appOut();return}
+  window.appIn(u);
+  unsubs.push(onSnapshot(doc(fs,'users',u.uid,'meta','state'),s=>window.appState(s.exists()?s.data():null,s.metadata.hasPendingWrites),e=>console.error(e)));
+  unsubs.push(onSnapshot(collection(fs,'users',u.uid,'log'),s=>window.appLog(s.docs.map(d=>d.data())),e=>console.error(e)));
+});
 </script>
 </body>
 </html>
